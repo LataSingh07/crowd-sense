@@ -34,8 +34,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession);
       setUser(newSession?.user ?? null);
+      setLoading(false);
       if (newSession?.user) {
-        // Defer to avoid deadlock
+        // Defer to avoid deadlock with onAuthStateChange
         setTimeout(() => loadRoles(newSession.user.id), 0);
       } else {
         setRoles([]);
@@ -48,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(existing?.user ?? null);
       if (existing?.user) loadRoles(existing.user.id);
       setLoading(false);
-    });
+    }).catch(() => setLoading(false));
 
     return () => sub.subscription.unsubscribe();
   }, []);
