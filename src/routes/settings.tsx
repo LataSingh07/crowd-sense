@@ -98,6 +98,22 @@ function SettingsPage() {
             </div>
           )}
 
+          {cfg.mode === "lovable-ai" && (
+            <div className="space-y-1.5">
+              <Label>Detection interval (ms)</Label>
+              <Input
+                type="number"
+                min={1000}
+                step={500}
+                value={cfg.aiIntervalMs}
+                onChange={(e) => setCfg({ ...cfg, aiIntervalMs: Number(e.target.value) })}
+              />
+              <p className="text-xs text-muted-foreground">
+                How often the server runs AI detection. Lower = more responsive but uses more AI credits. 2500ms is a good balance.
+              </p>
+            </div>
+          )}
+
           <Button onClick={save}>Save</Button>
         </CardContent>
       </Card>
