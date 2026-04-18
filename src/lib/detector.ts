@@ -25,7 +25,7 @@ export interface DetectionResult {
   count: number;
 }
 
-export type DetectorMode = "simulator" | "remote";
+export type DetectorMode = "simulator" | "lovable-ai" | "remote";
 
 export interface DetectorConfig {
   mode: DetectorMode;
@@ -34,21 +34,29 @@ export interface DetectorConfig {
   // Simulator parameters
   simBaseCount: number; // average people
   simVariance: number; // ± variance
+  // Lovable AI throttle (ms between calls — vision is rate-limited)
+  aiIntervalMs: number;
 }
 
 const STORAGE_KEY = "smartcrowd.detector.config";
 
+const DEFAULTS: DetectorConfig = {
+  mode: "simulator",
+  remoteUrl: "",
+  simBaseCount: 12,
+  simVariance: 8,
+  aiIntervalMs: 2500,
+};
+
 export function getDetectorConfig(): DetectorConfig {
-  if (typeof window === "undefined") {
-    return { mode: "simulator", remoteUrl: "", simBaseCount: 12, simVariance: 8 };
-  }
+  if (typeof window === "undefined") return DEFAULTS;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { mode: "simulator", remoteUrl: "", simBaseCount: 12, simVariance: 8, ...JSON.parse(raw) };
+    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
   } catch {
     // ignore
   }
-  return { mode: "simulator", remoteUrl: "", simBaseCount: 12, simVariance: 8 };
+  return DEFAULTS;
 }
 
 export function setDetectorConfig(cfg: DetectorConfig) {
