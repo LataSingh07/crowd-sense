@@ -250,7 +250,7 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
           status === "danger" && running && "pulse-danger border-danger",
         )}
       >
-        <video ref={videoRef} className="absolute inset-0 h-full w-full object-cover opacity-0" muted playsInline />
+        <video ref={videoRef} className="absolute inset-0 h-full w-full object-cover" muted playsInline autoPlay />
         <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
         {showHeatmap && (
           <canvas
