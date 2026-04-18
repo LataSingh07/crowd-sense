@@ -102,42 +102,34 @@ function DashboardPage() {
     return () => { supabase.removeChannel(channel); };
   }, [qc]);
 
-  // Persist a reading every ~3 seconds, throttled across renders
+  // Persist a reading every ~3 seconds via the backend (which also auto-creates alerts)
   const lastSavedRef = useRef(0);
-  const lastAlertRef = useRef<{ status: CrowdStatus; ts: number }>({ status: "safe", ts: 0 });
+  const lastStatusRef = useRef<CrowdStatus>("safe");
 
   const handleReading = async (r: { count: number; status: CrowdStatus; density: number }) => {
     if (!camera) return;
     const now = Date.now();
-    if (now - lastSavedRef.current > 3000) {
-      lastSavedRef.current = now;
-      await supabase.from("crowd_readings").insert({
-        camera_id: camera.id,
-        people_count: r.count,
-        density: r.density,
-        status: r.status,
+    const statusChanged = lastStatusRef.current !== r.status;
+    // Send immediately on status change, otherwise throttle to every 3s
+    if (!statusChanged && now - lastSavedRef.current < 3000) return;
+    lastSavedRef.current = now;
+    const previousStatus = lastStatusRef.current;
+    lastStatusRef.current = r.status;
+
+    try {
+      const { error } = await supabase.functions.invoke("record-reading", {
+        body: {
+          cameraId: camera.id,
+          count: r.count,
+          density: r.density,
+          status: r.status,
+          previousStatus,
+        },
       });
+      if (error) console.error("record-reading error", error);
       qc.invalidateQueries({ queryKey: ["readings", camera.id] });
-    }
-    // Alert: only when status changes to moderate/danger and at most every 30s
-    if (
-      (r.status === "danger" || r.status === "moderate") &&
-      lastAlertRef.current.status !== r.status &&
-      now - lastAlertRef.current.ts > 30_000
-    ) {
-      lastAlertRef.current = { status: r.status, ts: now };
-      const message =
-        r.status === "danger"
-          ? `🚨 DANGER: ${r.count} people detected at ${camera.name}`
-          : `⚠️ Moderate crowd at ${camera.name}: ${r.count} people`;
-      await supabase.from("alerts").insert({
-        camera_id: camera.id,
-        severity: r.status,
-        people_count: r.count,
-        message,
-      });
-    } else if (r.status === "safe") {
-      lastAlertRef.current = { status: "safe", ts: lastAlertRef.current.ts };
+    } catch (e) {
+      console.error("record-reading failed", e);
     }
   };
 
