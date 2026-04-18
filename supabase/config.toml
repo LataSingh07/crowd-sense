@@ -1,1 +1,7 @@
 project_id = "nwzqvvecynphznrashox"
+
+[functions.detect-people]
+verify_jwt = false
+
+[functions.record-reading]
+verify_jwt = true

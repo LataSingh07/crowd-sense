@@ -48,12 +48,14 @@ function SettingsPage() {
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="simulator">Simulator (built-in, no backend)</SelectItem>
+                <SelectItem value="lovable-ai">Lovable AI vision (server-side, recommended)</SelectItem>
                 <SelectItem value="remote">Remote API (your YOLO/FastAPI server)</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Simulator generates believable bounding boxes locally so the dashboard works end-to-end out of the box.
-              Switch to Remote once your backend is hosted.
+              <strong>Simulator</strong>: fake boxes for testing.{" "}
+              <strong>Lovable AI</strong>: real person detection on the server using Gemini vision — no setup.{" "}
+              <strong>Remote</strong>: your own YOLO/FastAPI server.
             </p>
           </div>
 
@@ -93,6 +95,22 @@ function SettingsPage() {
                 <Label>Variance ±</Label>
                 <Input type="number" min={0} value={cfg.simVariance} onChange={(e) => setCfg({ ...cfg, simVariance: Number(e.target.value) })} />
               </div>
+            </div>
+          )}
+
+          {cfg.mode === "lovable-ai" && (
+            <div className="space-y-1.5">
+              <Label>Detection interval (ms)</Label>
+              <Input
+                type="number"
+                min={1000}
+                step={500}
+                value={cfg.aiIntervalMs}
+                onChange={(e) => setCfg({ ...cfg, aiIntervalMs: Number(e.target.value) })}
+              />
+              <p className="text-xs text-muted-foreground">
+                How often the server runs AI detection. Lower = more responsive but uses more AI credits. 2500ms is a good balance.
+              </p>
             </div>
           )}
 
