@@ -136,6 +136,71 @@ async function detectRemote(
   return { boxes, count: boxes.length };
 }
 
+// Throttling state for AI mode + last result cache to keep canvas smooth between calls
+const aiState: { lastCall: number; lastResult: DetectionResult; inFlight: boolean } = {
+  lastCall: 0,
+  lastResult: { boxes: [], count: 0 },
+  inFlight: false,
+};
+
+async function detectLovableAI(
+  video: HTMLVideoElement,
+  width: number,
+  height: number,
+  cfg: DetectorConfig,
+): Promise<DetectionResult> {
+  const now = performance.now();
+  // Throttle: only call AI every aiIntervalMs; otherwise return last result
+  if (aiState.inFlight || now - aiState.lastCall < cfg.aiIntervalMs) {
+    return aiState.lastResult;
+  }
+  aiState.inFlight = true;
+  aiState.lastCall = now;
+  try {
+    const off = document.createElement("canvas");
+    // Downscale to keep payload small + fast
+    const scale = Math.min(1, 640 / Math.max(width, height));
+    off.width = Math.round(width * scale);
+    off.height = Math.round(height * scale);
+    const ctx = off.getContext("2d");
+    if (!ctx) throw new Error("No 2d context");
+    ctx.drawImage(video, 0, 0, off.width, off.height);
+    const dataUrl = off.toDataURL("image/jpeg", 0.6);
+
+    const supabaseUrl = (import.meta as { env: Record<string, string> }).env.VITE_SUPABASE_URL;
+    const publishable = (import.meta as { env: Record<string, string> }).env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    const res = await fetch(`${supabaseUrl}/functions/v1/detect-people`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: publishable,
+        Authorization: `Bearer ${publishable}`,
+      },
+      body: JSON.stringify({ imageBase64: dataUrl }),
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error("detect-people failed", res.status, txt);
+      return aiState.lastResult;
+    }
+    const json = (await res.json()) as { boxes: Array<{ x: number; y: number; w: number; h: number; score: number }>; count: number };
+    const boxes: DetectionBox[] = (json.boxes ?? []).map((b) => ({
+      x: b.x * width,
+      y: b.y * height,
+      w: b.w * width,
+      h: b.h * height,
+      score: b.score ?? 1,
+    }));
+    aiState.lastResult = { boxes, count: boxes.length };
+    return aiState.lastResult;
+  } catch (e) {
+    console.error("detectLovableAI error", e);
+    return aiState.lastResult;
+  } finally {
+    aiState.inFlight = false;
+  }
+}
+
 /**
  * Main entry — pass a video element + the canvas dimensions. Returns boxes in
  * canvas pixel coordinates.
@@ -146,10 +211,15 @@ export async function detectFrame(
   canvasHeight: number,
 ): Promise<DetectionResult> {
   const cfg = getDetectorConfig();
-  if (cfg.mode === "simulator" || !cfg.remoteUrl) {
+  if (cfg.mode === "simulator") {
     return simulateBoxes(canvasWidth, canvasHeight, cfg);
   }
+  if (cfg.mode === "lovable-ai") {
+    if (!video || video.videoWidth === 0) return { boxes: [], count: 0 };
+    return detectLovableAI(video, canvasWidth, canvasHeight, cfg);
+  }
   // Remote: capture frame -> blob -> POST
+  if (!cfg.remoteUrl) return simulateBoxes(canvasWidth, canvasHeight, cfg);
   const off = document.createElement("canvas");
   off.width = canvasWidth;
   off.height = canvasHeight;
