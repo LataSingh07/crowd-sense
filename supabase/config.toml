@@ -4,4 +4,4 @@ project_id = "nwzqvvecynphznrashox"
 verify_jwt = false
 
 [functions.record-reading]
-verify_jwt = true
+verify_jwt = false
