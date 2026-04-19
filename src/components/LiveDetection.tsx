@@ -5,9 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Camera, Upload, Pause, Play, Square, Film } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// Public-domain crowd footage (Pexels CDN). Loaded on demand for demo purposes.
-const DEMO_VIDEO_URL =
-  "https://videos.pexels.com/video-files/3727445/3727445-uhd_3840_2160_30fps.mp4";
+// Bundled sample video served from the app's own origin (avoids CORS / canvas-taint issues).
+const DEMO_VIDEO_URL = "/demo/sample-crowd.mp4";
 
 interface CameraConfig {
   id: string;
