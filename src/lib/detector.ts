@@ -41,7 +41,7 @@ export interface DetectorConfig {
 const STORAGE_KEY = "smartcrowd.detector.config";
 
 const DEFAULTS: DetectorConfig = {
-  mode: "simulator",
+  mode: "lovable-ai",
   remoteUrl: "",
   simBaseCount: 12,
   simVariance: 8,
