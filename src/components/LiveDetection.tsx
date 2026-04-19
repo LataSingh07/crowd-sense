@@ -2,8 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { detectFrame, type DetectionBox, getDetectorConfig } from "@/lib/detector";
 import { classifyStatus, statusClass, statusLabel, type CrowdStatus } from "@/lib/density";
 import { Button } from "@/components/ui/button";
-import { Camera, Upload, Pause, Play, Square } from "lucide-react";
+import { Camera, Upload, Pause, Play, Square, Film } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+// Public-domain crowd footage (Pexels CDN). Loaded on demand for demo purposes.
+const DEMO_VIDEO_URL =
+  "https://videos.pexels.com/video-files/3727445/3727445-uhd_3840_2160_30fps.mp4";
 
 interface CameraConfig {
   id: string;
@@ -30,7 +34,8 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
   const streamRef = useRef<MediaStream | null>(null);
 
   const [running, setRunning] = useState(false);
-  const [source, setSource] = useState<"webcam" | "upload" | null>(null);
+  const [source, setSource] = useState<"webcam" | "upload" | "demo" | null>(null);
+  const [demoLoading, setDemoLoading] = useState(false);
   const [count, setCount] = useState(0);
   const [status, setStatus] = useState<CrowdStatus>("safe");
   const [mode] = useState(() => getDetectorConfig().mode);
@@ -68,6 +73,25 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
       // Fallback: still let simulator render onto a black canvas
       setSource("webcam");
       setRunning(true);
+    }
+  };
+
+  const startDemo = async () => {
+    stop();
+    setDemoLoading(true);
+    try {
+      if (videoRef.current) {
+        videoRef.current.crossOrigin = "anonymous";
+        videoRef.current.src = DEMO_VIDEO_URL;
+        videoRef.current.loop = true;
+        await videoRef.current.play();
+      }
+      setSource("demo");
+      setRunning(true);
+    } catch (e) {
+      console.error("demo video failed", e);
+    } finally {
+      setDemoLoading(false);
     }
   };
 
@@ -216,6 +240,15 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={startWebcam} variant={source === "webcam" ? "default" : "outline"} size="sm">
           <Camera className="h-4 w-4 mr-1.5" /> Webcam
+        </Button>
+        <Button
+          onClick={startDemo}
+          variant={source === "demo" ? "default" : "outline"}
+          size="sm"
+          disabled={demoLoading}
+        >
+          <Film className="h-4 w-4 mr-1.5" />
+          {demoLoading ? "Loading…" : "Demo video"}
         </Button>
         <label>
           <input type="file" accept="video/*" hidden onChange={onFile} />
