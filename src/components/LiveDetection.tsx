@@ -4,10 +4,10 @@ import { classifyStatus, statusClass, statusLabel, type CrowdStatus } from "@/li
 import { Button } from "@/components/ui/button";
 import { Camera, Upload, Pause, Play, Square, Film } from "lucide-react";
 import { cn } from "@/lib/utils";
+import demoVideoUrl from "@/assets/sample-crowd.mp4";
 
-// Public-domain crowd footage (Pexels CDN). Loaded on demand for demo purposes.
-const DEMO_VIDEO_URL =
-  "https://videos.pexels.com/video-files/3727445/3727445-uhd_3840_2160_30fps.mp4";
+// Bundled sample video served from the app's own origin (avoids CORS / canvas-taint issues).
+const DEMO_VIDEO_URL = demoVideoUrl;
 
 interface CameraConfig {
   id: string;
@@ -81,7 +81,7 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
     setDemoLoading(true);
     try {
       if (videoRef.current) {
-        videoRef.current.crossOrigin = "anonymous";
+        videoRef.current.removeAttribute("crossorigin");
         videoRef.current.src = DEMO_VIDEO_URL;
         videoRef.current.loop = true;
         await videoRef.current.play();
@@ -90,6 +90,10 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
       setRunning(true);
     } catch (e) {
       console.error("demo video failed", e);
+      const msg = e instanceof Error ? e.message : "Unable to play demo video";
+      // Lazy import to avoid circular deps in some bundlers
+      const { toast } = await import("sonner");
+      toast.error(`Demo video failed: ${msg}`);
     } finally {
       setDemoLoading(false);
     }
