@@ -38,10 +38,10 @@ export interface DetectorConfig {
   aiIntervalMs: number;
 }
 
-const STORAGE_KEY = "smartcrowd.detector.config";
+const STORAGE_KEY = "smartcrowd.detector.config.v2";
 
 const DEFAULTS: DetectorConfig = {
-  mode: "simulator",
+  mode: "lovable-ai",
   remoteUrl: "",
   simBaseCount: 12,
   simVariance: 8,
@@ -169,12 +169,14 @@ async function detectLovableAI(
 
     const supabaseUrl = (import.meta as { env: Record<string, string> }).env.VITE_SUPABASE_URL;
     const publishable = (import.meta as { env: Record<string, string> }).env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    // NOTE: do NOT send the user's session JWT — the gateway's auth layer
+    // tries to verify it (ES256) and 401s before our function runs. The
+    // function itself has verify_jwt=false, so apikey alone is enough.
     const res = await fetch(`${supabaseUrl}/functions/v1/detect-people`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         apikey: publishable,
-        Authorization: `Bearer ${publishable}`,
       },
       body: JSON.stringify({ imageBase64: dataUrl }),
     });
