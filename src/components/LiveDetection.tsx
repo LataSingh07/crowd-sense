@@ -4,9 +4,10 @@ import { classifyStatus, statusClass, statusLabel, type CrowdStatus } from "@/li
 import { Button } from "@/components/ui/button";
 import { Camera, Upload, Pause, Play, Square, Film } from "lucide-react";
 import { cn } from "@/lib/utils";
+import demoVideoUrl from "@/assets/sample-crowd.mp4";
 
 // Bundled sample video served from the app's own origin (avoids CORS / canvas-taint issues).
-const DEMO_VIDEO_URL = "/demo/sample-crowd.mp4";
+const DEMO_VIDEO_URL = demoVideoUrl;
 
 interface CameraConfig {
   id: string;
