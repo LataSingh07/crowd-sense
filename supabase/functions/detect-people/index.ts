@@ -50,12 +50,12 @@ Deno.serve(async (req) => {
           {
             role: "system",
             content:
-              "You are a precise person-detection model. Look at the image and return bounding boxes for every visible person. Coordinates must be normalized 0..1 relative to image size, where (0,0) is top-left. Be conservative — only count clear humans.",
+              "You are a strict person-detection model. Return bounding boxes ONLY for clearly visible humans (whole or partial bodies, heads, faces). Do NOT label animals, cartoon characters, plush toys, statues, mannequins, posters, or reflections as people. If there are no people, return an empty array. Coordinates are normalized 0..1 with (0,0) at top-left.",
           },
           {
             role: "user",
             content: [
-              { type: "text", text: "Detect all people in this frame." },
+              { type: "text", text: "Detect every clearly visible real human in this frame. If none, return an empty array." },
               { type: "image_url", image_url: { url: dataUrl } },
             ],
           },
