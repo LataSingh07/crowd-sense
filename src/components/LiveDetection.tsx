@@ -80,7 +80,7 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
     setDemoLoading(true);
     try {
       if (videoRef.current) {
-        videoRef.current.crossOrigin = "anonymous";
+        videoRef.current.removeAttribute("crossorigin");
         videoRef.current.src = DEMO_VIDEO_URL;
         videoRef.current.loop = true;
         await videoRef.current.play();
@@ -89,6 +89,10 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
       setRunning(true);
     } catch (e) {
       console.error("demo video failed", e);
+      const msg = e instanceof Error ? e.message : "Unable to play demo video";
+      // Lazy import to avoid circular deps in some bundlers
+      const { toast } = await import("sonner");
+      toast.error(`Demo video failed: ${msg}`);
     } finally {
       setDemoLoading(false);
     }
