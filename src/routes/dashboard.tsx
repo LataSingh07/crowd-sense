@@ -117,16 +117,22 @@ function DashboardPage() {
     lastStatusRef.current = r.status;
 
     try {
-      const { error } = await supabase.functions.invoke("record-reading", {
-        body: {
+      const supabaseUrl = (import.meta as { env: Record<string, string> }).env.VITE_SUPABASE_URL;
+      const publishable = (import.meta as { env: Record<string, string> }).env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      // Use apikey only (no session JWT) — function is verify_jwt=false and the
+      // gateway rejects ES256 user JWTs.
+      const res = await fetch(`${supabaseUrl}/functions/v1/record-reading`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: publishable },
+        body: JSON.stringify({
           cameraId: camera.id,
           count: r.count,
           density: r.density,
           status: r.status,
           previousStatus,
-        },
+        }),
       });
-      if (error) console.error("record-reading error", error);
+      if (!res.ok) console.error("record-reading error", res.status, await res.text());
       qc.invalidateQueries({ queryKey: ["readings", camera.id] });
     } catch (e) {
       console.error("record-reading failed", e);
