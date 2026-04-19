@@ -38,7 +38,7 @@ export interface DetectorConfig {
   aiIntervalMs: number;
 }
 
-const STORAGE_KEY = "smartcrowd.detector.config";
+const STORAGE_KEY = "smartcrowd.detector.config.v2";
 
 const DEFAULTS: DetectorConfig = {
   mode: "lovable-ai",
