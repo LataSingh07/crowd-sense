@@ -57,10 +57,15 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
 
   useEffect(() => () => stop(), []);
 
-  const startWebcam = async () => {
+  const startWebcam = async (preferRear = false) => {
     stop();
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } });
+      const constraints: MediaStreamConstraints = {
+        video: preferRear
+          ? { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }
+          : { width: 1280, height: 720 },
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
