@@ -244,12 +244,19 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
     };
   }, [running, camera.threshold_moderate, camera.threshold_danger, camera.area_sqm, onReading, showHeatmap]);
 
+  const isMobile = typeof navigator !== "undefined" && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={startWebcam} variant={source === "webcam" ? "default" : "outline"} size="sm">
-          <Camera className="h-4 w-4 mr-1.5" /> Webcam
+        <Button onClick={() => startWebcam(false)} variant={source === "webcam" ? "default" : "outline"} size="sm">
+          <Camera className="h-4 w-4 mr-1.5" /> {isMobile ? "Front camera" : "Webcam"}
         </Button>
+        {isMobile && (
+          <Button onClick={() => startWebcam(true)} variant="outline" size="sm">
+            <Camera className="h-4 w-4 mr-1.5" /> Rear camera
+          </Button>
+        )}
         <Button
           onClick={startDemo}
           variant={source === "demo" ? "default" : "outline"}
