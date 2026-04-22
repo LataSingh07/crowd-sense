@@ -86,11 +86,13 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
       }
       setSource("webcam");
       setRunning(true);
+      persistSource("webcam", { preferRear });
     } catch (e) {
       console.error(e);
       // Fallback: still let simulator render onto a black canvas
       setSource("webcam");
       setRunning(true);
+      persistSource("webcam", { preferRear });
     }
   };
 
