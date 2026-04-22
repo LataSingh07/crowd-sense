@@ -40,6 +40,9 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
   const [status, setStatus] = useState<CrowdStatus>("safe");
   const [mode] = useState(() => getDetectorConfig().mode);
 
+  // Persistence key per camera so each camera remembers its own source
+  const storageKey = `liveDetection:source:${camera.id}`;
+
   const stop = () => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
