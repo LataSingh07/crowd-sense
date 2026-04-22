@@ -40,7 +40,10 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
   const [status, setStatus] = useState<CrowdStatus>("safe");
   const [mode] = useState(() => getDetectorConfig().mode);
 
-  const stop = () => {
+  // Persistence key per camera so each camera remembers its own source
+  const storageKey = `liveDetection:source:${camera.id}`;
+
+  const stop = (clearPersisted = true) => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -53,12 +56,22 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
     }
     setRunning(false);
     setSource(null);
+    if (clearPersisted && typeof window !== "undefined") {
+      try { localStorage.removeItem(storageKey); } catch { /* noop */ }
+    }
   };
 
-  useEffect(() => () => stop(), []);
+  useEffect(() => () => stop(false), []);
+
+  const persistSource = (s: "webcam" | "upload" | "demo", extra: Record<string, unknown> = {}) => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(storageKey, JSON.stringify({ source: s, ...extra }));
+    } catch { /* noop */ }
+  };
 
   const startWebcam = async (preferRear = false) => {
-    stop();
+    stop(false);
     try {
       const constraints: MediaStreamConstraints = {
         video: preferRear
@@ -73,16 +86,18 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
       }
       setSource("webcam");
       setRunning(true);
+      persistSource("webcam", { preferRear });
     } catch (e) {
       console.error(e);
       // Fallback: still let simulator render onto a black canvas
       setSource("webcam");
       setRunning(true);
+      persistSource("webcam", { preferRear });
     }
   };
 
   const startDemo = async () => {
-    stop();
+    stop(false);
     setDemoLoading(true);
     try {
       if (videoRef.current) {
@@ -93,6 +108,7 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
       }
       setSource("demo");
       setRunning(true);
+      persistSource("demo");
     } catch (e) {
       console.error("demo video failed", e);
       const msg = e instanceof Error ? e.message : "Unable to play demo video";
@@ -107,7 +123,7 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    stop();
+    stop(false);
     if (videoRef.current) {
       videoRef.current.src = URL.createObjectURL(file);
       videoRef.current.loop = true;
@@ -115,7 +131,25 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
     }
     setSource("upload");
     setRunning(true);
+    // Note: uploaded files can't be auto-resumed (browser security), so don't persist.
   };
+
+  // Auto-resume from persisted source on mount / camera change
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let raw: string | null = null;
+    try { raw = localStorage.getItem(storageKey); } catch { return; }
+    if (!raw) return;
+    try {
+      const saved = JSON.parse(raw) as { source?: string; preferRear?: boolean };
+      if (saved.source === "webcam") {
+        void startWebcam(!!saved.preferRear);
+      } else if (saved.source === "demo") {
+        void startDemo();
+      }
+    } catch { /* noop */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camera.id]);
 
   // Detection loop
   useEffect(() => {
@@ -280,7 +314,7 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
           </Button>
         )}
         {running ? (
-          <Button onClick={stop} variant="destructive" size="sm">
+          <Button onClick={() => stop()} variant="destructive" size="sm">
             <Square className="h-4 w-4 mr-1.5" /> Stop
           </Button>
         ) : source ? (
