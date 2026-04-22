@@ -43,7 +43,7 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
   // Persistence key per camera so each camera remembers its own source
   const storageKey = `liveDetection:source:${camera.id}`;
 
-  const stop = () => {
+  const stop = (clearPersisted = true) => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -56,12 +56,22 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
     }
     setRunning(false);
     setSource(null);
+    if (clearPersisted && typeof window !== "undefined") {
+      try { localStorage.removeItem(storageKey); } catch { /* noop */ }
+    }
   };
 
-  useEffect(() => () => stop(), []);
+  useEffect(() => () => stop(false), []);
+
+  const persistSource = (s: "webcam" | "upload" | "demo", extra: Record<string, unknown> = {}) => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(storageKey, JSON.stringify({ source: s, ...extra }));
+    } catch { /* noop */ }
+  };
 
   const startWebcam = async (preferRear = false) => {
-    stop();
+    stop(false);
     try {
       const constraints: MediaStreamConstraints = {
         video: preferRear
