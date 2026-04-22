@@ -314,7 +314,7 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
           </Button>
         )}
         {running ? (
-          <Button onClick={stop} variant="destructive" size="sm">
+          <Button onClick={() => stop()} variant="destructive" size="sm">
             <Square className="h-4 w-4 mr-1.5" /> Stop
           </Button>
         ) : source ? (
