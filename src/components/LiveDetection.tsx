@@ -57,10 +57,15 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
 
   useEffect(() => () => stop(), []);
 
-  const startWebcam = async () => {
+  const startWebcam = async (preferRear = false) => {
     stop();
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } });
+      const constraints: MediaStreamConstraints = {
+        video: preferRear
+          ? { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }
+          : { width: 1280, height: 720 },
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -239,12 +244,19 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
     };
   }, [running, camera.threshold_moderate, camera.threshold_danger, camera.area_sqm, onReading, showHeatmap]);
 
+  const isMobile = typeof navigator !== "undefined" && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={startWebcam} variant={source === "webcam" ? "default" : "outline"} size="sm">
-          <Camera className="h-4 w-4 mr-1.5" /> Webcam
+        <Button onClick={() => startWebcam(false)} variant={source === "webcam" ? "default" : "outline"} size="sm">
+          <Camera className="h-4 w-4 mr-1.5" /> {isMobile ? "Front camera" : "Webcam"}
         </Button>
+        {isMobile && (
+          <Button onClick={() => startWebcam(true)} variant="outline" size="sm">
+            <Camera className="h-4 w-4 mr-1.5" /> Rear camera
+          </Button>
+        )}
         <Button
           onClick={startDemo}
           variant={source === "demo" ? "default" : "outline"}
