@@ -182,7 +182,6 @@ function DashboardPage() {
           <p className="text-sm text-muted-foreground">Real-time crowd detection and alerts.</p>
         </div>
         <div className="flex items-center gap-2">
-          <PhoneConnectDialog />
           <span className="text-sm text-muted-foreground">Camera:</span>
           <Select value={selectedId ?? ""} onValueChange={setSelectedId}>
             <SelectTrigger className="w-[240px]"><SelectValue /></SelectTrigger>
