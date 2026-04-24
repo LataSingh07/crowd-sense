@@ -13,11 +13,9 @@ import { classifyStatus, statusClass, statusLabel, type CrowdStatus, linearForec
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
-import { Users, Gauge, AlertTriangle, MapPin, Smartphone, Copy } from "lucide-react";
+import { Users, Gauge, AlertTriangle, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "@tanstack/react-router";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
-import { QRCodeSVG } from "qrcode.react";
 
 export const Route = createFileRoute("/dashboard")({
   component: () => (
@@ -182,7 +180,6 @@ function DashboardPage() {
           <p className="text-sm text-muted-foreground">Real-time crowd detection and alerts.</p>
         </div>
         <div className="flex items-center gap-2">
-          <PhoneConnectDialog />
           <span className="text-sm text-muted-foreground">Camera:</span>
           <Select value={selectedId ?? ""} onValueChange={setSelectedId}>
             <SelectTrigger className="w-[240px]"><SelectValue /></SelectTrigger>
@@ -314,58 +311,3 @@ function StatCard({ icon: Icon, label, value, hint }: { icon: typeof Users; labe
   );
 }
 
-function PhoneConnectDialog() {
-  const url = typeof window !== "undefined" ? `${window.location.origin}/dashboard` : "";
-  const isSecure = typeof window !== "undefined" && (window.location.protocol === "https:" || window.location.hostname === "localhost");
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(url);
-      toast.success("Link copied");
-    } catch {
-      toast.error("Could not copy link");
-    }
-  };
-
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Smartphone className="h-4 w-4 mr-1.5" /> Connect phone
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Use your phone as a camera</DialogTitle>
-          <DialogDescription>
-            Scan the QR code with your phone, sign in with the same account, then on the live feed
-            tap <span className="font-medium">Rear camera</span> to start counting people.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-col items-center gap-4 py-2">
-          <div className="rounded-xl bg-white p-4">
-            {url && <QRCodeSVG value={url} size={200} includeMargin={false} />}
-          </div>
-          <div className="flex w-full items-center gap-2">
-            <code className="flex-1 truncate rounded-md border bg-muted px-2 py-1.5 text-xs">{url}</code>
-            <Button variant="outline" size="sm" onClick={copy}>
-              <Copy className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-          {!isSecure && (
-            <p className="text-xs text-destructive">
-              Camera access requires HTTPS. Open this link on your phone over HTTPS (e.g. the
-              published URL).
-            </p>
-          )}
-          <ol className="w-full list-decimal space-y-1 pl-5 text-xs text-muted-foreground">
-            <li>Scan the QR with your phone camera.</li>
-            <li>Open the link, log in if needed, then go to Live monitoring.</li>
-            <li>Pick a camera, tap <span className="font-medium">Rear camera</span>, allow access.</li>
-            <li>Counts and alerts sync live to this dashboard.</li>
-          </ol>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
