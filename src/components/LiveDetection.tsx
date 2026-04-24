@@ -2,11 +2,32 @@ import { useEffect, useRef, useState } from "react";
 import { detectFrame, type DetectionBox, getDetectorConfig } from "@/lib/detector";
 import { classifyStatus, statusClass, statusLabel, type CrowdStatus } from "@/lib/density";
 import { Button } from "@/components/ui/button";
-import { Camera, Upload, Pause, Play, Square, Film } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Camera,
+  Upload,
+  Pause,
+  Play,
+  Square,
+  Film,
+  Wifi,
+  Plane,
+  Cctv,
+  AlertTriangle,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import Hls from "hls.js";
 import demoVideoUrl from "@/assets/sample-crowd.mp4";
 
-// Bundled sample video served from the app's own origin (avoids CORS / canvas-taint issues).
 const DEMO_VIDEO_URL = demoVideoUrl;
 
 interface CameraConfig {
@@ -23,7 +44,27 @@ interface Props {
   showHeatmap?: boolean;
 }
 
+type SourceKind = "webcam-front" | "webcam-rear" | "ip" | "cctv" | "drone" | "upload" | "demo" | null;
+
 const HEATMAP_DECAY = 0.92;
+
+// Source-type catalog used by the picker
+const SOURCE_TYPES: Array<{
+  value: Exclude<SourceKind, null>;
+  label: string;
+  icon: typeof Camera;
+  description: string;
+  needsUrl?: boolean;
+  needsFile?: boolean;
+}> = [
+  { value: "webcam-front", label: "Webcam (front)", icon: Camera, description: "Use the device front camera" },
+  { value: "webcam-rear", label: "Webcam (rear)", icon: Camera, description: "Use the device rear camera (mobile)" },
+  { value: "ip", label: "IP Camera", icon: Wifi, description: "HLS (.m3u8), MJPEG or HTTP MP4 stream URL", needsUrl: true },
+  { value: "cctv", label: "CCTV Camera", icon: Cctv, description: "HLS (.m3u8) or HTTP stream URL", needsUrl: true },
+  { value: "drone", label: "Drone Camera", icon: Plane, description: "HLS or HTTP stream URL from your drone gateway", needsUrl: true },
+  { value: "upload", label: "Video File", icon: Upload, description: "Upload an MP4/WebM file", needsFile: true },
+  { value: "demo", label: "Demo Video", icon: Film, description: "Bundled sample crowd footage" },
+];
 
 export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -32,51 +73,74 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
   const heatBufferRef = useRef<Float32Array | null>(null);
   const rafRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
 
   const [running, setRunning] = useState(false);
-  const [source, setSource] = useState<"webcam" | "upload" | "demo" | null>(null);
+  const [source, setSource] = useState<SourceKind>(null);
+  const [sourceLabel, setSourceLabel] = useState<string>("");
   const [demoLoading, setDemoLoading] = useState(false);
   const [count, setCount] = useState(0);
   const [status, setStatus] = useState<CrowdStatus>("safe");
   const [mode] = useState(() => getDetectorConfig().mode);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Persistence key per camera so each camera remembers its own source
+  // Picker state
+  const [pickerType, setPickerType] = useState<Exclude<SourceKind, null>>("webcam-front");
+  const [streamUrl, setStreamUrl] = useState("");
+
   const storageKey = `liveDetection:source:${camera.id}`;
 
-  const stop = (clearPersisted = true) => {
+  const cleanupStream = () => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
+    if (hlsRef.current) {
+      try { hlsRef.current.destroy(); } catch { /* noop */ }
+      hlsRef.current = null;
+    }
     if (videoRef.current) {
       videoRef.current.pause();
       videoRef.current.srcObject = null;
       videoRef.current.removeAttribute("src");
       videoRef.current.load();
     }
+  };
+
+  const stop = (clearPersisted = true) => {
+    cleanupStream();
     setRunning(false);
     setSource(null);
+    setSourceLabel("");
+    setErrorMsg(null);
     if (clearPersisted && typeof window !== "undefined") {
       try { localStorage.removeItem(storageKey); } catch { /* noop */ }
     }
   };
 
-  useEffect(() => () => stop(false), []);
+  useEffect(() => () => cleanupStream(), []);
 
-  const persistSource = (s: "webcam" | "upload" | "demo", extra: Record<string, unknown> = {}) => {
+  const persist = (s: Exclude<SourceKind, null>, extra: Record<string, unknown> = {}) => {
     if (typeof window === "undefined") return;
     try {
       localStorage.setItem(storageKey, JSON.stringify({ source: s, ...extra }));
     } catch { /* noop */ }
   };
 
-  const startWebcam = async (preferRear = false) => {
-    stop(false);
+  // ---------- Source starters ----------
+
+  const startWebcam = async (preferRear: boolean) => {
+    cleanupStream();
+    setErrorMsg(null);
     try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("Camera API not available. Use HTTPS and a modern browser.");
+      }
       const constraints: MediaStreamConstraints = {
         video: preferRear
           ? { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }
-          : { width: 1280, height: 720 },
+          : { width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
       };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
@@ -84,20 +148,95 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
-      setSource("webcam");
+      const kind: SourceKind = preferRear ? "webcam-rear" : "webcam-front";
+      setSource(kind);
+      setSourceLabel(preferRear ? "Rear webcam" : "Front webcam");
       setRunning(true);
-      persistSource("webcam", { preferRear });
+      persist(kind);
     } catch (e) {
-      console.error(e);
-      // Fallback: still let simulator render onto a black canvas
-      setSource("webcam");
+      const msg = e instanceof Error ? e.message : "Could not access webcam";
+      setErrorMsg(msg);
+      toast.error(`Webcam error: ${msg}`);
+    }
+  };
+
+  const startStreamUrl = async (
+    url: string,
+    kind: Extract<SourceKind, "ip" | "cctv" | "drone">,
+    label: string,
+  ) => {
+    cleanupStream();
+    setErrorMsg(null);
+
+    const trimmed = url.trim();
+    if (!trimmed) {
+      const m = "Please enter a stream URL";
+      setErrorMsg(m); toast.error(m); return;
+    }
+    if (/^rtsp:\/\//i.test(trimmed)) {
+      const m = "Browsers cannot play RTSP directly. Use an RTSP→HLS gateway (e.g. MediaMTX, go2rtc) and paste the .m3u8 URL.";
+      setErrorMsg(m); toast.error(m); return;
+    }
+    if (!/^https?:\/\//i.test(trimmed)) {
+      const m = "URL must start with http:// or https://";
+      setErrorMsg(m); toast.error(m); return;
+    }
+
+    const video = videoRef.current;
+    if (!video) return;
+
+    const isHls = /\.m3u8(\?|$)/i.test(trimmed);
+    const playPromise = new Promise<void>((resolve, reject) => {
+      const onErr = () => {
+        cleanup();
+        reject(new Error("Stream failed to load. Check URL, CORS and network."));
+      };
+      const onCanPlay = () => { cleanup(); resolve(); };
+      const cleanup = () => {
+        video.removeEventListener("error", onErr);
+        video.removeEventListener("canplay", onCanPlay);
+      };
+      video.addEventListener("error", onErr);
+      video.addEventListener("canplay", onCanPlay);
+      // Safety timeout
+      setTimeout(() => { cleanup(); reject(new Error("Stream timed out after 15s")); }, 15000);
+    });
+
+    try {
+      video.crossOrigin = "anonymous"; // required for canvas drawImage from cross-origin streams
+      if (isHls && Hls.isSupported()) {
+        const hls = new Hls({ lowLatencyMode: true });
+        hlsRef.current = hls;
+        hls.on(Hls.Events.ERROR, (_e, data) => {
+          if (data.fatal) {
+            const m = `HLS error: ${data.type} / ${data.details}`;
+            setErrorMsg(m); toast.error(m);
+          }
+        });
+        hls.loadSource(trimmed);
+        hls.attachMedia(video);
+      } else {
+        // Native (Safari) HLS, MJPEG over HTTP, or plain MP4
+        video.src = trimmed;
+      }
+      video.loop = false;
+      await video.play().catch(() => { /* canplay handler will resolve */ });
+      await playPromise;
+      setSource(kind);
+      setSourceLabel(label);
       setRunning(true);
-      persistSource("webcam", { preferRear });
+      persist(kind, { url: trimmed, label });
+    } catch (e) {
+      cleanupStream();
+      const msg = e instanceof Error ? e.message : "Failed to start stream";
+      setErrorMsg(msg);
+      toast.error(msg);
     }
   };
 
   const startDemo = async () => {
-    stop(false);
+    cleanupStream();
+    setErrorMsg(null);
     setDemoLoading(true);
     try {
       if (videoRef.current) {
@@ -107,13 +246,12 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
         await videoRef.current.play();
       }
       setSource("demo");
+      setSourceLabel("Demo video");
       setRunning(true);
-      persistSource("demo");
+      persist("demo");
     } catch (e) {
-      console.error("demo video failed", e);
       const msg = e instanceof Error ? e.message : "Unable to play demo video";
-      // Lazy import to avoid circular deps in some bundlers
-      const { toast } = await import("sonner");
+      setErrorMsg(msg);
       toast.error(`Demo video failed: ${msg}`);
     } finally {
       setDemoLoading(false);
@@ -123,15 +261,40 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    stop(false);
+    cleanupStream();
+    setErrorMsg(null);
     if (videoRef.current) {
+      videoRef.current.removeAttribute("crossorigin");
       videoRef.current.src = URL.createObjectURL(file);
       videoRef.current.loop = true;
-      await videoRef.current.play();
+      try {
+        await videoRef.current.play();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "File could not be played";
+        setErrorMsg(msg); toast.error(msg); return;
+      }
     }
     setSource("upload");
+    setSourceLabel(file.name);
     setRunning(true);
-    // Note: uploaded files can't be auto-resumed (browser security), so don't persist.
+    // Browsers can't re-access local files after refresh; do not persist.
+  };
+
+  // Unified picker dispatcher
+  const handleStartPicker = async () => {
+    switch (pickerType) {
+      case "webcam-front": return startWebcam(false);
+      case "webcam-rear": return startWebcam(true);
+      case "ip": return startStreamUrl(streamUrl, "ip", "IP camera");
+      case "cctv": return startStreamUrl(streamUrl, "cctv", "CCTV");
+      case "drone": return startStreamUrl(streamUrl, "drone", "Drone");
+      case "demo": return startDemo();
+      case "upload": {
+        // Trigger hidden file input
+        document.getElementById(`live-upload-${camera.id}`)?.click();
+        return;
+      }
+    }
   };
 
   // Auto-resume from persisted source on mount / camera change
@@ -141,17 +304,21 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
     try { raw = localStorage.getItem(storageKey); } catch { return; }
     if (!raw) return;
     try {
-      const saved = JSON.parse(raw) as { source?: string; preferRear?: boolean };
-      if (saved.source === "webcam") {
-        void startWebcam(!!saved.preferRear);
-      } else if (saved.source === "demo") {
-        void startDemo();
+      const saved = JSON.parse(raw) as { source?: Exclude<SourceKind, null>; url?: string; label?: string };
+      if (!saved.source) return;
+      if (saved.source === "webcam-front") void startWebcam(false);
+      else if (saved.source === "webcam-rear") void startWebcam(true);
+      else if (saved.source === "demo") void startDemo();
+      else if ((saved.source === "ip" || saved.source === "cctv" || saved.source === "drone") && saved.url) {
+        setPickerType(saved.source);
+        setStreamUrl(saved.url);
+        void startStreamUrl(saved.url, saved.source, saved.label ?? saved.source.toUpperCase());
       }
     } catch { /* noop */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [camera.id]);
 
-  // Detection loop
+  // ---------- Detection loop ----------
   useEffect(() => {
     if (!running) return;
     let cancelled = false;
@@ -177,9 +344,17 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
         return;
       }
 
-      // Draw video frame (or dark backdrop if no video)
       if (video.videoWidth > 0) {
-        ctx.drawImage(video, 0, 0, w, h);
+        try {
+          ctx.drawImage(video, 0, 0, w, h);
+        } catch {
+          // Cross-origin taint — show a hint
+          ctx.fillStyle = "#0f172a";
+          ctx.fillRect(0, 0, w, h);
+          ctx.fillStyle = "#fca5a5";
+          ctx.font = "13px sans-serif";
+          ctx.fillText("Stream blocked by CORS — server must send Access-Control-Allow-Origin", 16, 28);
+        }
       } else {
         ctx.fillStyle = "#0f172a";
         ctx.fillRect(0, 0, w, h);
@@ -196,7 +371,6 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
         result = { boxes: [], count: 0 };
       }
 
-      // Update heatmap buffer (low-res)
       if (showHeatmap) {
         const HW = 64, HH = 36;
         if (!heatBufferRef.current || heatBufferRef.current.length !== HW * HH) {
@@ -225,7 +399,6 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
             const img = hctx.createImageData(HW, HH);
             for (let i = 0; i < buf.length; i++) {
               const v = Math.min(1, buf[i] / 3);
-              // gradient: blue -> green -> yellow -> red
               const r = v < 0.5 ? Math.round(v * 2 * 255) : 255;
               const g = v < 0.5 ? 255 : Math.round((1 - (v - 0.5) * 2) * 255);
               const b = v < 0.25 ? 255 : 0;
@@ -239,7 +412,6 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
         }
       }
 
-      // Draw boxes
       const newStatus = classifyStatus(result.count, camera.threshold_moderate, camera.threshold_danger);
       const boxColor =
         newStatus === "danger" ? "#ef4444" : newStatus === "moderate" ? "#f59e0b" : "#22c55e";
@@ -258,7 +430,6 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
       setCount(result.count);
       setStatus(newStatus);
 
-      // Report every ~1s
       const now = performance.now();
       if (onReading && now - lastReport > 1000) {
         lastReport = now;
@@ -279,61 +450,109 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
   }, [running, camera.threshold_moderate, camera.threshold_danger, camera.area_sqm, onReading, showHeatmap]);
 
   const isMobile = typeof navigator !== "undefined" && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+  const activeType = SOURCE_TYPES.find((t) => t.value === pickerType)!;
+  const needsUrl = !!activeType.needsUrl;
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={() => startWebcam(false)} variant={source === "webcam" ? "default" : "outline"} size="sm">
-          <Camera className="h-4 w-4 mr-1.5" /> {isMobile ? "Front camera" : "Webcam"}
-        </Button>
-        {isMobile && (
-          <Button onClick={() => startWebcam(true)} variant="outline" size="sm">
-            <Camera className="h-4 w-4 mr-1.5" /> Rear camera
-          </Button>
+      {/* Unified source picker */}
+      <div className="rounded-xl border bg-card p-3 space-y-3">
+        <div className="grid gap-3 md:grid-cols-[220px_1fr_auto] md:items-end">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Camera type</Label>
+            <Select value={pickerType} onValueChange={(v) => setPickerType(v as Exclude<SourceKind, null>)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {SOURCE_TYPES.map((t) => {
+                  const Icon = t.icon;
+                  // Hide rear webcam on desktop to reduce noise
+                  if (t.value === "webcam-rear" && !isMobile) return null;
+                  return (
+                    <SelectItem key={t.value} value={t.value}>
+                      <span className="inline-flex items-center gap-2">
+                        <Icon className="h-3.5 w-3.5" /> {t.label}
+                      </span>
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {needsUrl ? (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Stream URL</Label>
+              <Input
+                placeholder="https://example.com/stream.m3u8"
+                value={streamUrl}
+                onChange={(e) => setStreamUrl(e.target.value)}
+              />
+            </div>
+          ) : activeType.needsFile ? (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Video file</Label>
+              <input
+                id={`live-upload-${camera.id}`}
+                type="file"
+                accept="video/*"
+                onChange={onFile}
+                className="block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-secondary/80"
+              />
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">{activeType.description}</p>
+          )}
+
+          <div className="flex gap-2">
+            {!running ? (
+              <Button onClick={handleStartPicker} disabled={demoLoading} size="sm">
+                <Play className="h-4 w-4 mr-1.5" />
+                {demoLoading ? "Loading…" : "Start"}
+              </Button>
+            ) : (
+              <Button onClick={() => stop()} variant="destructive" size="sm">
+                <Square className="h-4 w-4 mr-1.5" /> Stop
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {needsUrl && (
+          <p className="text-[11px] text-muted-foreground">
+            Supports HLS (.m3u8), HTTP MJPEG and HTTP MP4. RTSP requires a gateway (MediaMTX, go2rtc, ffmpeg → HLS).
+            The stream server must allow CORS.
+          </p>
         )}
-        <Button
-          onClick={startDemo}
-          variant={source === "demo" ? "default" : "outline"}
-          size="sm"
-          disabled={demoLoading}
-        >
-          <Film className="h-4 w-4 mr-1.5" />
-          {demoLoading ? "Loading…" : "Demo video"}
-        </Button>
-        <label>
-          <input type="file" accept="video/*" hidden onChange={onFile} />
-          <Button asChild variant={source === "upload" ? "default" : "outline"} size="sm">
-            <span className="cursor-pointer">
-              <Upload className="h-4 w-4 mr-1.5" /> Upload video
-            </span>
-          </Button>
-        </label>
-        {!source && (
-          <Button onClick={() => setRunning(true)} variant="secondary" size="sm">
-            <Play className="h-4 w-4 mr-1.5" /> Start simulator
-          </Button>
+
+        {errorMsg && (
+          <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
+            <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
         )}
-        {running ? (
-          <Button onClick={() => stop()} variant="destructive" size="sm">
-            <Square className="h-4 w-4 mr-1.5" /> Stop
-          </Button>
-        ) : source ? (
-          <Button onClick={() => setRunning(true)} variant="secondary" size="sm">
-            <Play className="h-4 w-4 mr-1.5" /> Resume
-          </Button>
-        ) : null}
-        <span className="ml-auto text-xs text-muted-foreground">
-          Detector: <span className="font-medium">{mode}</span>
-        </span>
+
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>
+            {source ? <>Active: <span className="font-medium text-foreground">{sourceLabel}</span></> : "No active source"}
+          </span>
+          <span>Detector: <span className="font-medium">{mode}</span></span>
+        </div>
       </div>
 
+      {/* Live canvas */}
       <div
         className={cn(
           "relative w-full overflow-hidden rounded-xl border bg-slate-950 aspect-video",
           status === "danger" && running && "pulse-danger border-danger",
         )}
       >
-        <video ref={videoRef} className="absolute inset-0 h-full w-full object-cover opacity-0 pointer-events-none" muted playsInline autoPlay />
+        <video
+          ref={videoRef}
+          className="absolute inset-0 h-full w-full object-cover opacity-0 pointer-events-none"
+          muted
+          playsInline
+          autoPlay
+        />
         <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
         {showHeatmap && (
           <canvas
@@ -342,7 +561,6 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
             style={{ imageRendering: "pixelated" }}
           />
         )}
-        {/* HUD */}
         <div className="absolute left-3 top-3 flex items-center gap-2">
           <span className={cn("rounded-full border px-2.5 py-0.5 text-xs font-medium", statusClass(status))}>
             ● {statusLabel(status)}
@@ -353,7 +571,7 @@ export function LiveDetection({ camera, onReading, showHeatmap = true }: Props) 
         </div>
         {!running && (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-white/70">
-            <Pause className="mr-2 h-4 w-4" /> Idle — pick a source above
+            <Pause className="mr-2 h-4 w-4" /> Idle — choose a camera type and press Start
           </div>
         )}
       </div>
