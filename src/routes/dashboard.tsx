@@ -13,11 +13,9 @@ import { classifyStatus, statusClass, statusLabel, type CrowdStatus, linearForec
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, ReferenceLine,
 } from "recharts";
-import { Users, Gauge, AlertTriangle, MapPin, Smartphone, Copy } from "lucide-react";
+import { Users, Gauge, AlertTriangle, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "@tanstack/react-router";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
-import { QRCodeSVG } from "qrcode.react";
 
 export const Route = createFileRoute("/dashboard")({
   component: () => (
